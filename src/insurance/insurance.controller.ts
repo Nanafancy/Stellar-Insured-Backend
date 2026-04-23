@@ -1,4 +1,5 @@
 import { Controller, Post, Get, Param, Body, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { InsuranceService } from './insurance.service';
 import { ClaimService } from './claim.service';
 import { ReinsuranceService } from './reinsurance.service';
@@ -20,6 +21,7 @@ export class InsuranceController {
 
   // Any authenticated user can purchase a policy
   @Post('purchase')
+  @Throttle({ default: { limit: 10, ttl: 3600000 } }) // 10 purchases per hour
   @UseGuards(CsrfGuard)
   @Roles(Role.USER, Role.UNDERWRITER, Role.ADMIN)
   async purchase(@Body() body: { userId: string; poolId: string; riskType: RiskType; coverageAmount: number }) {
@@ -28,6 +30,7 @@ export class InsuranceController {
 
   // Only underwriters and admins can assess claims
   @Post('claims/:claimId/assess')
+  @Throttle({ admin: { limit: 100, ttl: 60000 } }) // 100 assessments per minute for admins
   @UseGuards(CsrfGuard)
   @Roles(Role.UNDERWRITER, Role.ADMIN)
   async assessClaim(@Param('claimId') claimId: string) {
@@ -36,6 +39,7 @@ export class InsuranceController {
 
   // Only admins can trigger claim payouts
   @Post('claims/:claimId/pay')
+  @Throttle({ admin: { limit: 50, ttl: 60000 } }) // 50 payouts per minute for admins
   @UseGuards(CsrfGuard)
   @Roles(Role.ADMIN)
   async payClaim(@Param('claimId') claimId: string) {
@@ -44,6 +48,7 @@ export class InsuranceController {
 
   // Only admins can create reinsurance contracts
   @Post('reinsurance')
+  @Throttle({ admin: { limit: 20, ttl: 60000 } }) // 20 contracts per minute for admins
   @UseGuards(CsrfGuard)
   @Roles(Role.ADMIN)
   async createReinsurance(@Body() body: { poolId: string; coverageLimit: number; premiumRate: number }) {
