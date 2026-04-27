@@ -4,7 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { TerminusModule } from '@nestjs/terminus';
 import { HttpModule } from '@nestjs/axios';
 import { ThrottlerModule } from '@nestjs/throttler';
-import { APP_GUARD, APP_FILTER } from '@nestjs/core';
+import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -26,6 +26,7 @@ import { CorrelationIdMiddleware } from './middleware/correlation-id.middleware'
 
 // ← NEW: global exception filter for standardised error responses
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
+import { ResponseTransformInterceptor } from './common/interceptors/response.interceptor';
 
 @Module({
   imports: [
@@ -67,7 +68,6 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter';
     NotificationModule,
     EncryptionModule,
     StorageModule,
-    CsrfModule,
 
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
@@ -116,6 +116,10 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter';
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ResponseTransformInterceptor,
     },
   ],
 })

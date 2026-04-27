@@ -34,14 +34,6 @@ export class StorageService {
     });
   }
 
-    try {
-      this.ipfs = create({ host, port, protocol });
-    } catch (error) {
-      this.logger.error('Failed to initialize IPFS client', error);
-      throw new InternalServerErrorException('IPFS client initialization failed');
-    }
-  }
-
   async pinProjectMetadata(metadata: Record<string, unknown>): Promise<string> {
     try {
       const cid = await this.ipfs.add(JSON.stringify(metadata));
