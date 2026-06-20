@@ -274,7 +274,7 @@ describe('Soft Delete Examples', () => {
     await service.deleteUser(user.id);
 
     const restored = await softDeleteService.restore('user', { id: user.id });
-    expect(restored.deletedAt).toBeNull();
+    expect((restored as any).deletedAt).toBeNull();
 
     const found = await service.getUser(user.id);
     expect(found).toBeDefined();
@@ -286,7 +286,7 @@ describe('Soft Delete Examples', () => {
 
     const found = await softDeleteService.findIncludingDeleted('user', { id: user.id });
     expect(found).toBeDefined();
-    expect(found.deletedAt).not.toBeNull();
+    expect((found as any).deletedAt).not.toBeNull();
   });
 
   it('should count only active users', async () => {

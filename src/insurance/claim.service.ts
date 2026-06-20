@@ -37,12 +37,14 @@ export class ClaimService {
     // 1. Verify policy is active
     if (policy.status !== PolicyStatus.ACTIVE) {
       await this.updateStatus(claimId, ClaimStatus.REJECTED, `Policy is not active: ${policy.status}`);
+      await this.updateStatus(claimId, ClaimStatus.REJECTED, `Policy is not active: ${policy.status}`, 'system');
       throw new BadRequestException('Cannot approve claim for inactive policy');
     }
 
     // 2. Check coverage limits
     if (Number(claim.claimAmount) > Number(policy.coverageAmount)) {
       await this.updateStatus(claimId, ClaimStatus.REJECTED, 'Claim amount exceeds coverage');
+      await this.updateStatus(claimId, ClaimStatus.REJECTED, 'Claim amount exceeds coverage', 'system');
       throw new BadRequestException('Claim amount exceeds policy coverage amount');
     }
 
@@ -65,6 +67,7 @@ export class ClaimService {
     const oracleVerified = await this.verifyOracle(claimId);
     if (!oracleVerified) {
       await this.updateStatus(claimId, ClaimStatus.REJECTED, 'Oracle verification failed');
+      await this.updateStatus(claimId, ClaimStatus.REJECTED, 'Oracle verification failed', 'system');
       throw new BadRequestException('Oracle verification failed');
     }
 
@@ -104,6 +107,9 @@ export class ClaimService {
       await this.auditService.logReject('Claim', claimId, beforeState, updated, reason);
     } else if (status === ClaimStatus.APPROVED) {
       await this.auditService.logApprove('Claim', claimId, beforeState, updated, undefined, reason);
+      await this.auditService.logReject('Claim', updated.id, beforeState, updated, reason);
+    } else if (status === ClaimStatus.APPROVED) {
+      await this.auditService.logApprove('Claim', updated.id, beforeState, updated, undefined, reason);
     }
 
     return updated;
