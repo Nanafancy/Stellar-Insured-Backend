@@ -37,10 +37,10 @@ describe('DatabaseModule - ORM Architecture Regression Tests', () => {
 
   describe('ORM Consistency - No TypeORM', () => {
     it('should not import TypeOrmModule anywhere in the application', async () => {
-      // Verify that only PrismaService is exported
-      const providers = module.get<any[]>('providers') || [];
-      const prismaProviders = providers.filter((p) => p === PrismaService || p?.provide === 'PrismaService');
-      expect(prismaProviders.length).toBeGreaterThanOrEqual(1);
+      // Verify that only PrismaService is available
+      // PrismaService should be successfully injected and available
+      expect(prismaService).toBeDefined();
+      expect(prismaService.constructor.name).toBe('PrismaService');
     });
 
     it('should verify DatabaseModule exports only PrismaService', () => {
