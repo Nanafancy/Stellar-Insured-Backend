@@ -1,50 +1,29 @@
-# ORM Recommendation
+# Resolved: ORM Architecture
 
 ## Summary
 
-This repository currently uses both Prisma and TypeORM for database access.
+✅ **This repository now exclusively uses Prisma** for all database access.
 
-### Found evidence
+TypeORM and @nestjs/typeorm have been removed from the codebase. All services—including insurance, user management, indexing, notifications, and reputation—now use Prisma exclusively.
 
-- `package.json` includes:
-  - `@prisma/client` and `prisma`
-  - `typeorm` and `@nestjs/typeorm`
-- Database migration scripts run both systems:
-  - `db:migrate`
-  - `db:migrate:dev`
-- TypeORM usage appears in insurance and reputation entities and services.
-- Prisma usage appears in application services, user management, indexing, notification, idempotency, and reputation logic.
+## Architecture Decision
 
-## Problem
+**Prisma is the single source of truth** for database access across the entire application:
+- Schema management via `prisma/schema.prisma`
+- Migrations via `prisma/migrations/`
+- All services use `PrismaService` injected from `DatabaseModule`
 
-Mixed ORM usage creates several issues:
+## Benefits
 
-- inconsistent database access patterns across the app
-- harder maintenance and onboarding
-- difficult transaction and schema coordination
-- potential data consistency and migration drift
+- ✅ Consistent data access patterns
+- ✅ Simplified onboarding and maintenance
+- ✅ Unified transaction and schema management
+- ✅ Eliminated ORM conflict risk
+- ✅ Single migration toolchain
 
-## Recommendation
+## References
 
-Choose one of the following approaches:
-
-1. **Consolidate on a single ORM**
-   - Prefer the ORM that already owns the largest or most critical domain.
-   - Migrate the other domain to that ORM over time.
-   - Remove the unused ORM dependencies and migration scripts.
-
-2. **Separate domains explicitly**
-   - If both ORMs must remain, isolate their usage to distinct bounded contexts.
-   - Avoid sharing tables between Prisma and TypeORM.
-   - Document clear ownership for each table and service layer.
-
-## Suggested next steps
-
-- Audit tables and services by ORM ownership.
-- Identify shared schema or table overlap.
-- Decide whether the app should standardize on Prisma or TypeORM.
-- Update migration strategy to one coherent toolchain.
-
-## Notes
-
-A consistent ORM strategy will improve maintainability, reduce risk, and simplify future database refactors.
+- **Database Configuration**: See [src/prisma.service.ts](src/prisma.service.ts)
+- **Schema**: See [prisma/schema.prisma](prisma/schema.prisma)
+- **Migrations**: See [prisma/migrations/](prisma/migrations/)
+- **Migration Guide**: See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)
