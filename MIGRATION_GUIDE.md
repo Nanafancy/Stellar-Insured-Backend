@@ -1,11 +1,13 @@
 # Database Migration Guide
 
-This project uses two database ORMs: **Prisma** and **TypeORM**. Both require proper migration management for safe schema evolution.
+This project exclusively uses **Prisma** for all database access and schema management.
 
 ## Overview
 
-- **Prisma**: Used for main application models (User, Project, Notification, etc.)
-- **TypeORM**: Used for insurance-related entities (InsurancePolicy, Claim, InsurancePool, ReinsuranceContract)
+**Prisma** is the single source of truth for:
+- All application models (User, InsurancePolicy, Claim, InsurancePool, Project, Notification, etc.)
+- Schema definition via `prisma/schema.prisma`
+- Schema migrations via `prisma/migrations/`
 
 ## Prisma Migrations
 
@@ -45,88 +47,35 @@ npm run prisma:migrate:deploy
 
 This applies migrations without modifying the migration history.
 
-## TypeORM Migrations
-
-### Baseline
-
-This repository now includes a starting TypeORM migration at `src/insurance/migrations/00000000000000-InitialInsuranceSchema.ts`.
-This migration establishes the initial insurance-related tables and enum types for the TypeORM-managed subset of the database.
-
-### Development
-
-Generate a new migration from entity changes:
-```bash
-npm run typeorm:migrate:generate -- -n AddPolicyFields
-```
-
-This creates a migration file in `src/insurance/migrations/` based on differences between entities and database.
-
-Run migrations:
-```bash
-npm run typeorm:migrate:run
-```
-
-Revert last migration:
-```bash
-npm run typeorm:migrate:revert
-```
-
-Show migration status:
-```bash
-npm run typeorm:migrate:show
-```
-
-### Production
-
-Run all pending migrations:
-```bash
-npm run typeorm:migrate:run
-```
-
-## Combined Migration Commands
-
-For development (both Prisma and TypeORM):
-```bash
-npm run db:migrate:dev
-```
-
-For production deployment:
-```bash
-npm run db:migrate
-```
-
 ## Migration Workflow
 
 ### Making Schema Changes
 
-1. **Update schema files**:
-   - Prisma: Edit `prisma/schema.prisma`
-   - TypeORM: Edit entity files in `insurance/entities/`
+1. **Update schema file**:
+   - Edit `prisma/schema.prisma` with your model changes
 
-2. **Generate migrations**:
+2. **Generate migration**:
    ```bash
    npm run prisma:migrate:generate -- describe_change
-   npm run typeorm:migrate:generate -- -n DescribeChange
    ```
 
 3. **Review generated SQL**:
    - Check `prisma/migrations/[timestamp]_describe_change/migration.sql`
-   - Check `insurance/migrations/[timestamp]-DescribeChange.ts`
 
 4. **Test locally**:
    ```bash
-   npm run db:migrate:dev
+   npm run prisma:migrate:dev
    ```
 
 5. **Commit migration files**:
    ```bash
-   git add prisma/migrations/ insurance/migrations/
+   git add prisma/migrations/
    git commit -m "feat: add database migration for feature X"
    ```
 
 6. **Deploy to production**:
    ```bash
-   npm run db:migrate
+   npm run prisma:migrate:deploy
    ```
 
 ### Best Practices
@@ -137,7 +86,7 @@ npm run db:migrate
 4. **Backup database** before running production migrations
 5. **Use descriptive names** for migrations (e.g., `add_user_email`, not `update`)
 6. **One logical change per migration** - Don't bundle unrelated changes
-7. **Test rollbacks** - Ensure `typeorm:migrate:revert` works correctly
+7. **Test rollbacks** - Ensure `npm run prisma:migrate:resolve` works correctly
 8. **Monitor migration logs** - Watch for errors or warnings
 
 ### Handling Migration Conflicts
@@ -154,39 +103,32 @@ When multiple developers create migrations:
 
 If a migration causes issues:
 
-**TypeORM**:
-```bash
-npm run typeorm:migrate:revert
-```
-
-**Prisma**:
-Prisma doesn't support automatic rollback. You must:
+Prisma does not support automatic rollback. You must:
 1. Manually write a reverse migration SQL
 2. Apply it using `prisma db execute`
-3. Or restore from backup
+3. Or restore from a backup
 
 ### Important Notes
 
 - **NEVER** use `prisma db push` in production - it doesn't create migration files
-- **NEVER** set `synchronize: true` in TypeORM for production - it can drop columns
 - **ALWAYS** commit migration files to version control
 - **ALWAYS** test migrations with production-like data volumes
+- **ALWAYS** backup production database before migrations
 
 ## Troubleshooting
 
 ### Migration fails halfway through
-- TypeORM migrations run in transactions by default
 - Prisma migrations are atomic
 - Database should rollback automatically
 - Check logs for specific error
 
 ### "Migration already applied" error
 - Migration history is out of sync
-- Run `prisma migrate resolve --applied [migration_name]` for Prisma
-- Check `typeorm_migrations` table for TypeORM
+- Run `prisma migrate resolve --applied [migration_name]`
+- Check `_prisma_migrations` table for history
 
-### Entity/Schema doesn't match database
-- Generate new migration to sync: `npm run typeorm:migrate:generate`
+### Schema doesn't match database
+- Generate new migration to sync: `npm run prisma:migrate:generate -- sync_schema`
 - Or reset database (dev only): `npm run prisma:migrate:reset`
 
 ## Environment Variables

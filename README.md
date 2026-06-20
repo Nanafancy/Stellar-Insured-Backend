@@ -28,6 +28,22 @@ Insurance is the primary product domain for this service.
 
 The Prisma schema includes insurance models for pools, policies, claims, reinsurance contracts, and audit logs. Legacy project/contribution models remain in place because the Stellar event indexer, reputation scoring, and notification flows still depend on them while the broader data layer is being consolidated.
 
+## 🏗️ Database Architecture
+
+**Prisma is the single source of truth** for all database access across this application:
+- All models (User, InsurancePolicy, Claim, InsurancePool, Project, Notification, etc.) are defined in `prisma/schema.prisma`
+- All services inject `PrismaService` from `DatabaseModule` for data access
+- All schema migrations use `prisma/migrations/` with Prisma CLI tools
+- Zero TypeORM or other ORM dependencies
+
+This decision ensures:
+- ✅ Consistent data access patterns across all domains
+- ✅ Unified schema management and migration strategy
+- ✅ Simplified onboarding and maintenance
+- ✅ Reduced risk of data consistency bugs
+
+For migration details, see [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md).
+
 🧑‍💻 Tech Stack
 
 Framework: NestJS
