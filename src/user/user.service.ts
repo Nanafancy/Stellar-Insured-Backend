@@ -41,7 +41,6 @@ export class UserService {
     const user = await this.prisma.user.findFirst({
       where: {
         id,
-        deletedAt: null,
       },
     });
     if (!user) {
@@ -62,7 +61,6 @@ export class UserService {
     const user = await this.prisma.user.findFirst({
       where: {
         walletAddress: sanitizedAddress,
-        deletedAt: null,
       },
     });
     if (!user) {
@@ -80,12 +78,10 @@ export class UserService {
 
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
-        where: { deletedAt: null },
         skip: offset,
         take: safeLimit,
       }),
       this.prisma.user.count({
-        where: { deletedAt: null },
       }),
     ]);
 
@@ -171,11 +167,8 @@ export class UserService {
 
   async delete(id: string): Promise<{ id: string; deletedAt: Date | null }> {
     await this.findById(id);
-    const deletedUser = await this.prisma.user.update({
+    const deletedUser = await this.prisma.user.delete({
       where: { id },
-      data: {
-        deletedAt: new Date(),
-      },
     });
     return {
       id: deletedUser.id,
