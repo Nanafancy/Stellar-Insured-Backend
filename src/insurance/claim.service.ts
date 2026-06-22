@@ -1,10 +1,15 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { ClaimStatus } from './enums/claim-status.enum';
 import { PolicyStatus } from './enums/policy-status.enum';
 import { AuditAction } from './enums/audit-action.enum';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from './services/audit.service';
-import { Claim, InsurancePolicy } from '@prisma/client';
+import { Claim, InsurancePolicy, Prisma } from '@prisma/client';
 
 type ClaimWithPolicy = Claim & { policy: InsurancePolicy };
 
@@ -18,10 +23,10 @@ export class ClaimService {
   ) {}
 
   async assessClaim(claimId: string): Promise<ClaimWithPolicy> {
-    const claim = await this.prisma.claim.findUnique({
+    const claim = (await this.prisma.claim.findUnique({
       where: { id: claimId },
       include: { policy: true },
-    }) as ClaimWithPolicy | null;
+    })) as ClaimWithPolicy | null;
 
     if (!claim) {
       throw new NotFoundException(`Claim with ID ${claimId} not found`);
@@ -38,6 +43,12 @@ export class ClaimService {
     if (policy.status !== PolicyStatus.ACTIVE) {
       await this.updateStatus(claimId, ClaimStatus.REJECTED, `Policy is not active: ${policy.status}`);
       await this.updateStatus(claimId, ClaimStatus.REJECTED, `Policy is not active: ${policy.status}`, 'system');
+      await this.updateStatus(
+        claimId,
+        ClaimStatus.REJECTED,
+        `Policy is not active: ${policy.status}`,
+        'system',
+      );
       throw new BadRequestException('Cannot approve claim for inactive policy');
     }
 
@@ -46,6 +57,15 @@ export class ClaimService {
       await this.updateStatus(claimId, ClaimStatus.REJECTED, 'Claim amount exceeds coverage');
       await this.updateStatus(claimId, ClaimStatus.REJECTED, 'Claim amount exceeds coverage', 'system');
       throw new BadRequestException('Claim amount exceeds policy coverage amount');
+      await this.updateStatus(
+        claimId,
+        ClaimStatus.REJECTED,
+        'Claim amount exceeds coverage',
+        'system',
+      );
+      throw new BadRequestException(
+        'Claim amount exceeds policy coverage amount',
+      );
     }
 
     // 3. Fraud Detection
@@ -68,17 +88,28 @@ export class ClaimService {
     if (!oracleVerified) {
       await this.updateStatus(claimId, ClaimStatus.REJECTED, 'Oracle verification failed');
       await this.updateStatus(claimId, ClaimStatus.REJECTED, 'Oracle verification failed', 'system');
+      await this.updateStatus(
+        claimId,
+        ClaimStatus.REJECTED,
+        'Oracle verification failed',
+        'system',
+      );
       throw new BadRequestException('Oracle verification failed');
     }
 
     // 5. Automated Approval
-    const updatedClaim = await this.prisma.claim.update({
+    const updatedClaim = (await this.prisma.claim.update({
       where: { id: claimId },
       data: { status: ClaimStatus.APPROVED, payoutAmount: claim.claimAmount },
       include: { policy: true },
-    }) as ClaimWithPolicy;
+    })) as ClaimWithPolicy;
 
-    await this.auditService.logApprove('Claim', claimId, beforeState, updatedClaim);
+    await this.auditService.logApprove(
+      'Claim',
+      claimId,
+      beforeState,
+      updatedClaim,
+    );
 
     return updatedClaim;
   }
@@ -89,27 +120,48 @@ export class ClaimService {
     reason: string,
     _user: string = 'system',
     additionalData: { payoutAmount?: any } = {},
+    _user: string,
+    additionalData: { payoutAmount?: Prisma.Decimal | number } = {},
   ): Promise<ClaimWithPolicy> {
-    const existing = await this.prisma.claim.findUnique({ where: { id: claimId }, include: { policy: true } }) as ClaimWithPolicy | null;
+    const existing = (await this.prisma.claim.findUnique({
+      where: { id: claimId },
+      include: { policy: true },
+    })) as ClaimWithPolicy | null;
     if (!existing) throw new NotFoundException('Claim not found');
 
     const beforeState = { ...existing };
-    const updated = await this.prisma.claim.update({
+    const updated = (await this.prisma.claim.update({
       where: { id: claimId },
       data: {
         status,
-        ...(additionalData.payoutAmount !== undefined && { payoutAmount: additionalData.payoutAmount }),
+        ...(additionalData.payoutAmount !== undefined && {
+          payoutAmount: additionalData.payoutAmount,
+        }),
       },
       include: { policy: true },
-    }) as ClaimWithPolicy;
+    })) as ClaimWithPolicy;
 
     if (status === ClaimStatus.REJECTED) {
       await this.auditService.logReject('Claim', claimId, beforeState, updated, reason);
     } else if (status === ClaimStatus.APPROVED) {
       await this.auditService.logApprove('Claim', claimId, beforeState, updated, undefined, reason);
       await this.auditService.logReject('Claim', updated.id, beforeState, updated, reason);
+      await this.auditService.logReject(
+        'Claim',
+        updated.id,
+        beforeState,
+        updated,
+        reason,
+      );
     } else if (status === ClaimStatus.APPROVED) {
-      await this.auditService.logApprove('Claim', updated.id, beforeState, updated, undefined, reason);
+      await this.auditService.logApprove(
+        'Claim',
+        updated.id,
+        beforeState,
+        updated,
+        undefined,
+        reason,
+      );
     }
 
     return updated;
@@ -158,7 +210,9 @@ export class ClaimService {
     }
 
     if (fraudIndicators.length > 0) {
-      this.logger.warn(`Fraud indicators detected for claim ${claim.id}: ${fraudIndicators.join(', ')}`);
+      this.logger.warn(
+        `Fraud indicators detected for claim ${claim.id}: ${fraudIndicators.join(', ')}`,
+      );
     }
 
     return fraudIndicators.length >= 2;
@@ -166,15 +220,18 @@ export class ClaimService {
 
   private async verifyOracle(claimId: string): Promise<boolean> {
     try {
-      const claim = await this.prisma.claim.findUnique({
+      const claim = (await this.prisma.claim.findUnique({
         where: { id: claimId },
         include: { policy: true },
-      }) as ClaimWithPolicy | null;
+      })) as ClaimWithPolicy | null;
       if (!claim || !claim.policy) return false;
 
       const policy = claim.policy;
       const now = new Date();
-      if (policy.status !== PolicyStatus.ACTIVE || (policy.endDate && policy.endDate < now)) {
+      if (
+        policy.status !== PolicyStatus.ACTIVE ||
+        (policy.endDate && policy.endDate < now)
+      ) {
         return false;
       }
 
@@ -196,24 +253,33 @@ export class ClaimService {
       );
 
       return true;
-    } catch (error) {
-      this.logger.error(`Oracle verification failed: ${error.message}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Oracle verification failed: ${message}`);
       return false;
     }
   }
 
   async payClaim(claimId: string): Promise<ClaimWithPolicy> {
-    const claim = await this.prisma.claim.findUnique({ where: { id: claimId }, include: { policy: true } }) as ClaimWithPolicy | null;
+    const claim = (await this.prisma.claim.findUnique({
+      where: { id: claimId },
+      include: { policy: true },
+    })) as ClaimWithPolicy | null;
     if (!claim) {
       throw new NotFoundException(`Claim with ID ${claimId} not found`);
     }
     const beforeState = { ...claim };
-    const updatedClaim = await this.prisma.claim.update({
+    const updatedClaim = (await this.prisma.claim.update({
       where: { id: claimId },
       data: { status: ClaimStatus.PAID },
       include: { policy: true },
-    }) as ClaimWithPolicy;
-    await this.auditService.logPayout('Claim', claimId, beforeState, updatedClaim);
+    })) as ClaimWithPolicy;
+    await this.auditService.logPayout(
+      'Claim',
+      claimId,
+      beforeState,
+      updatedClaim,
+    );
     return updatedClaim;
   }
 
@@ -228,6 +294,9 @@ export class ClaimService {
       data: {
         policyId,
         claimAmount,
+        claimAmount: parseFloat(
+          this.encryption.encrypt(claimAmount.toString()),
+        ),
         status: ClaimStatus.PENDING,
       },
     });
