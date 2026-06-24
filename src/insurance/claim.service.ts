@@ -8,7 +8,6 @@ import { ClaimStatus } from './enums/claim-status.enum';
 import { PolicyStatus } from './enums/policy-status.enum';
 import { AuditAction } from './enums/audit-action.enum';
 import { PrismaService } from '../prisma.service';
-import { EncryptionService } from '../encryption/encryption.service';
 import { AuditService } from './services/audit.service';
 import { Claim, InsurancePolicy, Prisma } from '@prisma/client';
 
@@ -20,7 +19,6 @@ export class ClaimService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly encryption: EncryptionService,
     private readonly auditService: AuditService,
   ) {}
 
@@ -60,9 +58,7 @@ export class ClaimService {
         'Claim amount exceeds coverage',
         'system',
       );
-      throw new BadRequestException(
-        'Claim amount exceeds policy coverage amount',
-      );
+      throw new BadRequestException('Claim amount exceeds policy coverage amount');
     }
 
     // 3. Fraud Detection
@@ -113,7 +109,7 @@ export class ClaimService {
     claimId: string,
     status: ClaimStatus,
     reason: string,
-    _user: string,
+    _user: string = 'system',
     additionalData: { payoutAmount?: Prisma.Decimal | number } = {},
   ): Promise<ClaimWithPolicy> {
     const existing = (await this.prisma.claim.findUnique({
@@ -135,13 +131,7 @@ export class ClaimService {
     })) as ClaimWithPolicy;
 
     if (status === ClaimStatus.REJECTED) {
-      await this.auditService.logReject(
-        'Claim',
-        updated.id,
-        beforeState,
-        updated,
-        reason,
-      );
+      await this.auditService.logReject('Claim', claimId, beforeState, updated, reason);
     } else if (status === ClaimStatus.APPROVED) {
       await this.auditService.logApprove(
         'Claim',
@@ -273,12 +263,16 @@ export class ClaimService {
   }
 
   async createClaim(policyId: string, claimAmount: number): Promise<Claim> {
+    // claimAmount is a plain numeric(18,2) column (see prisma/schema.prisma).
+    // It is NOT encrypted at rest: assessClaim()/runFraudDetection() compare
+    // it directly against policy.coverageAmount and run DB-level equality
+    // queries on it. Encrypting it here previously produced ciphertext that
+    // was force-cast to a number via parseFloat(), corrupting the value
+    // (issue #399, same root cause as InsuranceService.purchasePolicy()).
     const savedClaim = await this.prisma.claim.create({
       data: {
         policyId,
-        claimAmount: parseFloat(
-          this.encryption.encrypt(claimAmount.toString()),
-        ),
+        claimAmount,
         status: ClaimStatus.PENDING,
       },
     });

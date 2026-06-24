@@ -31,6 +31,8 @@ interface MockAuditService {
 
 describe('ClaimService', () => {
   let service: ClaimService;
+  let prisma: any;
+  let auditService: any;
   let prisma: MockPrismaService;
   let encryption: MockEncryptionService;
   let auditService: MockAuditService;
@@ -66,11 +68,6 @@ describe('ClaimService', () => {
       },
     };
 
-    encryption = {
-      encrypt: jest.fn((val: string) => `enc:${val}`),
-      decrypt: jest.fn((val: string) => val.replace('enc:', '')),
-    };
-
     auditService = {
       log: jest.fn(),
       logCreate: jest.fn(),
@@ -80,6 +77,7 @@ describe('ClaimService', () => {
       logUpdate: jest.fn(),
     };
 
+    service = new ClaimService(prisma, auditService);
     service = new ClaimService(
       prisma as unknown as PrismaService,
       encryption as unknown as EncryptionService,
@@ -89,6 +87,8 @@ describe('ClaimService', () => {
   });
 
   describe('createClaim', () => {
+    it('should create a claim with the plain, unencrypted claim amount', async () => {
+      const createdClaim = { id: 'claim-new', policyId: 'policy-1', claimAmount: 50000, status: ClaimStatus.PENDING };
     it('should create a claim with encrypted claim amount', async () => {
       const createdClaim = {
         id: 'claim-new',
@@ -100,14 +100,22 @@ describe('ClaimService', () => {
 
       const result = await service.createClaim('policy-1', 50000);
 
-      expect(encryption.encrypt).toHaveBeenCalledWith('50000');
+      // Regression for issue #399: claimAmount is a plain numeric(18,2) column.
+      // It must be written as-is, not run through EncryptionService + parseFloat
+      // (which previously corrupted it into NaN/garbage).
       expect(prisma.claim.create).toHaveBeenCalledWith({
         data: {
           policyId: 'policy-1',
-          claimAmount: expect.any(Number),
+          claimAmount: 50000,
           status: ClaimStatus.PENDING,
         },
       });
+      expect(auditService.logCreate).toHaveBeenCalledWith('Claim', 'claim-new', createdClaim);
+      expect(result.claimAmount).toBe(50000);
+    });
+
+    it('does not depend on EncryptionService for the claim amount', () => {
+      expect(service['encryption']).toBeUndefined();
       expect(auditService.logCreate).toHaveBeenCalledWith(
         'Claim',
         'claim-new',
