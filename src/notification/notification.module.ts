@@ -6,9 +6,10 @@ import { WebPushService } from './services/web-push.service';
 import { DeadlineAlertTask } from './tasks/deadline-alert.task';
 import { EmailRetryTask } from './tasks/email-retry.task';
 import { DatabaseModule } from '../database.module';
+import { UserModule } from '../user/user.module';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, UserModule],
   controllers: [NotificationController],
   providers: [
     NotificationService,

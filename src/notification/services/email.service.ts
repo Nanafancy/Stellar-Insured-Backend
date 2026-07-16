@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import * as sgMail from '@sendgrid/mail';
 import { PrismaService } from '../../prisma.service';
 
@@ -11,7 +11,15 @@ export class EmailService {
         sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
     }
 
+    private isValidEmail(email: string): boolean {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    }
+
     async sendEmail(to: string, subject: string, html: string): Promise<void> {
+        if (!this.isValidEmail(to)) {
+            throw new BadRequestException(`Invalid email address: ${to}`);
+        }
         try {
             if (!process.env.SENDGRID_API_KEY) {
                 this.logger.warn('SENDGRID_API_KEY not set. Email not sent.');

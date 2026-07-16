@@ -6,6 +6,7 @@ import { EmailService } from './email.service';
 import { WebPushService } from './web-push.service';
 import { NotificationType } from '../enums/notification-type.enum';
 import { validateEnum } from '../../common/validators/enum.validator';
+import { UserService } from '../../user/user.service';
 
 @Injectable()
 export class NotificationService {
@@ -15,6 +16,7 @@ export class NotificationService {
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
     private readonly webPushService: WebPushService,
+    private readonly userService: UserService,
   ) {}
 
   async notify(
@@ -27,21 +29,16 @@ export class NotificationService {
     // Validate notification type at runtime
     validateEnum(NotificationType, type, 'NotificationType');
 
-    const user = await this.prisma.user.findFirst({
-      where: {
-        id: userId,
-        deletedAt: null,
-      },
-      include: { notificationSettings: true },
-    });
-
-    if (!user) {
+    let contactData;
+    try {
+      contactData = await this.userService.getDecryptedContact(userId);
+    } catch {
       this.logger.warn(`User ${userId} not found for notification`);
       return;
     }
 
     // Default settings if none exist
-    const settings = user.notificationSettings || {
+    const settings = contactData.notificationSettings || {
       emailEnabled: true,
       pushEnabled: false,
       notifyContributions: true,
@@ -66,22 +63,22 @@ export class NotificationService {
     });
 
     // Dispatch via Email
-    if (settings.emailEnabled && user.email) {
+    if (settings.emailEnabled && contactData.email) {
       try {
         await this.emailService.sendEmail(
-          user.email,
+          contactData.email,
           title,
           `<p>${message}</p>`,
         );
       } catch {
         this.logger.error(
-          `Failed to send email to ${user.email} for notification ${title}`,
+          `Failed to send email to ${contactData.email} for notification ${title}`,
         );
       }
     }
 
     // Dispatch via Web Push
-    const pushSubscription = this.getPushSubscription(user.pushSubscription);
+    const pushSubscription = this.getPushSubscription(contactData.pushSubscription);
     if (settings.pushEnabled && pushSubscription) {
       try {
         await this.webPushService.sendNotification(pushSubscription, {
