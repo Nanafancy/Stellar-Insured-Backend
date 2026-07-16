@@ -176,21 +176,46 @@ export class UserService {
     };
   }
 
+  async getDecryptedContact(userId: string): Promise<{
+    email: string | null;
+    pushSubscription: Prisma.JsonValue | null;
+    notificationSettings: {
+      emailEnabled: boolean;
+      pushEnabled: boolean;
+      notifyContributions: boolean;
+      notifyMilestones: boolean;
+      notifyDeadlines: boolean;
+    } | null;
+  }> {
+    if (!isValidCuid(userId)) {
+      throw new BadRequestException('Invalid user ID format');
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        deletedAt: null,
+      },
+      include: { notificationSettings: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    const decrypted = this.decryptUser(user);
+    return {
+      email: decrypted.email,
+      pushSubscription: decrypted.pushSubscription,
+      notificationSettings: user.notificationSettings,
+    };
+  }
+
   /**
    * Decrypt sensitive fields in user object
    */
   private decryptUser(user: User): User {
     const decrypted = { ...user };
-
-    if (decrypted.walletAddress) {
-      try {
-        decrypted.walletAddress = this.encryption.decrypt(
-          decrypted.walletAddress,
-        );
-      } catch {
-        // If decryption fails, keep encrypted value
-      }
-    }
 
     if (decrypted.email) {
       try {
