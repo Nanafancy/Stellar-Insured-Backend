@@ -156,7 +156,7 @@ User deletes record
 ✅ Referential integrity preserved
 ```
 
-## 📋 Models Protected (13 Total)
+## 📋 Models Protected (18 Total)
 
 1. ✅ User
 2. ✅ Project
@@ -171,6 +171,11 @@ User deletes record
 11. ✅ AuditLog
 12. ✅ LedgerCursor
 13. ✅ ProcessedEvent
+14. ✅ IndexerLog
+15. ✅ NotificationSetting
+16. ✅ Notification
+17. ✅ EmailOutbox
+18. ✅ IdempotencyKey
 
 ## 🚀 Quick Start
 

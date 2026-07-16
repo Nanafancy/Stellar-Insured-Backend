@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { AuditAction, Prisma } from '@prisma/client';
 import { PrismaService } from './prisma.service';
 import type { SoftDeleteModel } from './prisma.soft-delete.middleware';
 
@@ -12,9 +13,13 @@ interface QueryOptions {
 }
 
 interface SoftDeleteDelegate {
-  delete<T>(args: { where: Record<string, unknown> }): Promise<T>;
+  delete<T>(args: {
+    where: Record<string, unknown>;
+    hardDelete?: boolean;
+  }): Promise<T>;
   deleteMany(args: {
     where: Record<string, unknown>;
+    hardDelete?: boolean;
   }): Promise<{ count: number }>;
   update<T>(args: {
     where: Record<string, unknown>;
@@ -61,7 +66,16 @@ export class SoftDeleteService {
       `Hard deleting ${model as string} with where: ${JSON.stringify(where)}. Reason: ${reason || 'Not provided'}`,
     );
 
-    return this.getDelegate(model).delete<T>({ where });
+    // hardDelete: true opts out of the middleware's delete -> soft-delete
+    // conversion; without it this purge would silently become a soft delete.
+    const result = await this.getDelegate(model).delete<T>({
+      where,
+      hardDelete: true,
+    });
+
+    await this.recordPurgeAudit(model, where, reason);
+
+    return result;
   }
 
   /**
@@ -72,7 +86,7 @@ export class SoftDeleteService {
    * @param where - Filter conditions
    * @param reason - Audit reason for permanent deletion
    */
-  async hardDeleteMany<T>(
+  async hardDeleteMany(
     model: SoftDeleteDelegateName,
     where: Record<string, unknown>,
     reason?: string,
@@ -81,7 +95,14 @@ export class SoftDeleteService {
       `Hard deleting ${model as string} records. Reason: ${reason || 'Not provided'}`,
     );
 
-    return this.getDelegate(model).deleteMany({ where });
+    const result = await this.getDelegate(model).deleteMany({
+      where,
+      hardDelete: true,
+    });
+
+    await this.recordPurgeAudit(model, where, reason, result.count);
+
+    return result;
   }
 
   /**
@@ -214,14 +235,24 @@ export class SoftDeleteService {
       `Permanently deleting ${model as string} records deleted before ${deletedBefore.toISOString()}`,
     );
 
-    const result = await this.getDelegate(model).deleteMany({
-      where: {
-        deletedAt: {
-          not: null,
-          lt: deletedBefore,
-        },
+    const where = {
+      deletedAt: {
+        not: null,
+        lt: deletedBefore,
       },
+    };
+
+    const result = await this.getDelegate(model).deleteMany({
+      where,
+      hardDelete: true,
     });
+
+    await this.recordPurgeAudit(
+      model,
+      where,
+      `Retention cleanup of records soft-deleted before ${deletedBefore.toISOString()}`,
+      result.count,
+    );
 
     return result.count;
   }
@@ -249,5 +280,35 @@ export class SoftDeleteService {
 
   private getDelegate(model: SoftDeleteDelegateName): SoftDeleteDelegate {
     return this.prisma[model] as unknown as SoftDeleteDelegate;
+  }
+
+  /**
+   * Record an audit trail entry for a permanent deletion.
+   * Best-effort: a failed audit write is logged but does not fail the purge.
+   */
+  private async recordPurgeAudit(
+    model: SoftDeleteDelegateName,
+    where: Record<string, unknown>,
+    reason?: string,
+    count?: number,
+  ): Promise<void> {
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          action: AuditAction.DELETE,
+          entityType: model as string,
+          entityId: typeof where.id === 'string' ? where.id : 'bulk',
+          beforeState: JSON.parse(
+            JSON.stringify({ where, ...(count !== undefined && { count }) }),
+          ) as Prisma.InputJsonValue,
+          reason: reason || 'Hard delete (no reason provided)',
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to write audit log for hard delete of ${model as string}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 }

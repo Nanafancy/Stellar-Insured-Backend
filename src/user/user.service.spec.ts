@@ -16,6 +16,21 @@ const prisma = {
     create: jest.fn(),
     update: jest.fn(),
   },
+  notification: {
+    updateMany: jest.fn(),
+  },
+  notificationSetting: {
+    updateMany: jest.fn(),
+  },
+  insurancePolicy: {
+    updateMany: jest.fn(),
+  },
+  claim: {
+    updateMany: jest.fn(),
+  },
+  $transaction: jest.fn((operations: Promise<unknown>[]) =>
+    Promise.all(operations),
+  ),
 };
 
 const encryption = {
@@ -120,6 +135,10 @@ describe('UserService', () => {
       id: 'clabcdefghij',
       deletedAt: new Date('2026-04-24T00:00:00.000Z'),
     });
+    prisma.notification.updateMany.mockResolvedValue({ count: 2 });
+    prisma.notificationSetting.updateMany.mockResolvedValue({ count: 1 });
+    prisma.insurancePolicy.updateMany.mockResolvedValue({ count: 1 });
+    prisma.claim.updateMany.mockResolvedValue({ count: 1 });
 
     const result = await service.delete('clabcdefghij');
 
@@ -133,6 +152,67 @@ describe('UserService', () => {
       id: 'clabcdefghij',
       deletedAt: new Date('2026-04-24T00:00:00.000Z'),
     });
+  });
+
+  it('cascades the soft delete to related records in one transaction', async () => {
+    prisma.user.findFirst.mockResolvedValue({
+      id: 'clabcdefghij',
+      walletAddress: 'encrypted:GABC123',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    prisma.user.update.mockResolvedValue({
+      id: 'clabcdefghij',
+      deletedAt: new Date('2026-04-24T00:00:00.000Z'),
+    });
+    prisma.notification.updateMany.mockResolvedValue({ count: 2 });
+    prisma.notificationSetting.updateMany.mockResolvedValue({ count: 1 });
+    prisma.insurancePolicy.updateMany.mockResolvedValue({ count: 1 });
+    prisma.claim.updateMany.mockResolvedValue({ count: 1 });
+
+    await service.delete('clabcdefghij');
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.notification.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'clabcdefghij' },
+      data: { deletedAt: expect.any(Date) },
+    });
+    expect(prisma.notificationSetting.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'clabcdefghij' },
+      data: { deletedAt: expect.any(Date) },
+    });
+    expect(prisma.insurancePolicy.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'clabcdefghij' },
+      data: { deletedAt: expect.any(Date) },
+    });
+    expect(prisma.claim.updateMany).toHaveBeenCalledWith({
+      where: { policy: { userId: 'clabcdefghij' } },
+      data: { deletedAt: expect.any(Date) },
+    });
+
+    // Every cascaded record must share the exact same deletion timestamp
+    // so the whole cascade can be restored as a unit.
+    const userDeletedAt = prisma.user.update.mock.calls[0][0].data.deletedAt;
+    for (const delegate of [
+      prisma.notification,
+      prisma.notificationSetting,
+      prisma.insurancePolicy,
+      prisma.claim,
+    ]) {
+      expect(delegate.updateMany.mock.calls[0][0].data.deletedAt).toBe(
+        userDeletedAt,
+      );
+    }
+  });
+
+  it('refuses to delete a user that is missing or already soft-deleted', async () => {
+    prisma.user.findFirst.mockResolvedValue(null);
+
+    await expect(service.delete('clabcdefghij')).rejects.toThrow(
+      NotFoundException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
   it('rejects invalid wallet address format in create', async () => {

@@ -17,6 +17,11 @@ export const SOFT_DELETE_MODELS = [
   'AuditLog',
   'LedgerCursor',
   'ProcessedEvent',
+  'IndexerLog',
+  'NotificationSetting',
+  'Notification',
+  'EmailOutbox',
+  'IdempotencyKey',
 ] as const;
 
 export type SoftDeleteModel = (typeof SOFT_DELETE_MODELS)[number];
@@ -36,11 +41,13 @@ type MiddlewareNext = (params: Prisma.MiddlewareParams) => Promise<unknown>;
 
 type SoftDeleteWhere = Record<string, unknown> & {
   _includeDeleted?: boolean;
+  _hardDelete?: boolean;
 };
 
 interface SoftDeleteMiddlewareArgs {
   where?: SoftDeleteWhere;
   includeDeleted?: boolean;
+  hardDelete?: boolean;
   data?: Record<string, unknown>;
 }
 
@@ -92,8 +99,12 @@ export function createSoftDeleteMiddleware(
 
     // Handle update operations - prevent updating through relations
     if (action === 'update' || action === 'updateMany') {
+      // Restore operations (data.deletedAt === null) must be able to reach
+      // soft-deleted rows, otherwise a deleted record could never be recovered.
+      const isRestore = args.data?.deletedAt === null;
+
       // Only update non-deleted records
-      if (config.excludeDeleted) {
+      if (config.excludeDeleted && !isRestore) {
         args.where = {
           ...args.where,
           deletedAt: null,
@@ -103,9 +114,23 @@ export function createSoftDeleteMiddleware(
 
     // Handle delete operations - convert to soft delete
     if (action === 'delete' || action === 'deleteMany') {
-      // Convert delete to update with deletedAt timestamp
+      // Explicit, audited purge paths (e.g. SoftDeleteService.hardDelete,
+      // GDPR erasure, re-org rollbacks) may opt out of the conversion.
+      if (shouldHardDelete(args)) {
+        removeHardDeleteFlags(args);
+        return next(params);
+      }
+
+      removeHardDeleteFlags(args);
+
+      // Convert delete to update with deletedAt timestamp.
+      // Only touch rows that are not already soft-deleted so repeated
+      // deletes do not silently re-stamp deletedAt.
       const updateArgs = {
-        where: args.where,
+        where: {
+          ...args.where,
+          deletedAt: null,
+        },
         data: {
           deletedAt: new Date(),
         },
@@ -163,6 +188,19 @@ function getMiddlewareArgs(
 
 function shouldIncludeDeleted(args: SoftDeleteMiddlewareArgs): boolean {
   return args.where?._includeDeleted === true || args.includeDeleted === true;
+}
+
+function shouldHardDelete(args: SoftDeleteMiddlewareArgs): boolean {
+  return args.where?._hardDelete === true || args.hardDelete === true;
+}
+
+function removeHardDeleteFlags(args: SoftDeleteMiddlewareArgs): void {
+  if (args.where?._hardDelete !== undefined) {
+    delete args.where._hardDelete;
+  }
+  if (args.hardDelete !== undefined) {
+    delete args.hardDelete;
+  }
 }
 
 function removeIncludeDeletedFlags(args: SoftDeleteMiddlewareArgs): void {

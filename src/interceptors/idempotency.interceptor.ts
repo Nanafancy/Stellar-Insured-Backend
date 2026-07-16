@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Observable, of } from 'rxjs';
 import { tap } from 'rxjs/operators';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 
 @Injectable()
@@ -33,41 +34,58 @@ export class IdempotencyInterceptor implements NestInterceptor {
         where: { key: idempotencyKey },
       });
 
-      if (existingKey) {
-        // Check if key has expired
-        if (new Date() > existingKey.expiresAt) {
-          // Key expired, delete it and allow request to proceed
-          await this.prisma.idempotencyKey.delete({
-            where: { key: idempotencyKey },
-          });
-        } else if (existingKey.status === 'COMPLETED' && existingKey.response) {
-          // Return cached response
-          response.set('X-Idempotency-Key', idempotencyKey);
-          response.set('X-Idempotency-Replayed', 'true');
-          return of(existingKey.response);
-        } else if (existingKey.status === 'PENDING') {
-          // Request is being processed, return 409 Conflict
-          throw new HttpException(
-            'Request is still being processed. Please wait and retry.',
-            HttpStatus.CONFLICT,
-          );
-        }
-      }
-
-      // Create new idempotency key record
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + 24); // 24-hour TTL
 
-      await this.prisma.idempotencyKey.create({
-        data: {
-          key: idempotencyKey,
-          method,
-          endpoint,
-          requestBody: request.body || {},
-          status: 'PENDING',
-          expiresAt,
-        },
-      });
+      if (existingKey) {
+        const isExpired = new Date() > existingKey.expiresAt;
+
+        if (!isExpired) {
+          if (existingKey.status === 'COMPLETED' && existingKey.response) {
+            // Return cached response
+            response.set('X-Idempotency-Key', idempotencyKey);
+            response.set('X-Idempotency-Replayed', 'true');
+            return of(existingKey.response);
+          }
+
+          if (existingKey.status === 'PENDING') {
+            // Request is being processed, return 409 Conflict
+            throw new HttpException(
+              'Request is still being processed. Please wait and retry.',
+              HttpStatus.CONFLICT,
+            );
+          }
+        }
+
+        // Key expired or previous attempt failed: reset the record in place.
+        // IdempotencyKey is a soft-delete model, so delete + recreate would
+        // leave a soft-deleted row holding the unique key and the recreate
+        // would fail with a unique constraint violation.
+        await this.prisma.idempotencyKey.update({
+          where: { key: idempotencyKey },
+          data: {
+            method,
+            endpoint,
+            requestBody: request.body || {},
+            response: Prisma.DbNull,
+            status: 'PENDING',
+            expiresAt,
+            deletedAt: null,
+          },
+        });
+      } else {
+        // Create new idempotency key record
+        await this.prisma.idempotencyKey.create({
+          data: {
+            key: idempotencyKey,
+            method,
+            endpoint,
+            requestBody: request.body || {},
+            status: 'PENDING',
+            expiresAt,
+          },
+        });
+      }
 
       // Process the request
       return next.handle().pipe(

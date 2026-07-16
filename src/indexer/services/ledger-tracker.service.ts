@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma.service';
+import { SoftDeleteService } from '../../prisma.soft-delete.service';
 import { LedgerCursor, LedgerInfo, ReorgDetectionResult } from '../types/ledger.types';
 
 /**
@@ -14,6 +15,7 @@ export class LedgerTrackerService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly softDelete: SoftDeleteService,
     private readonly configService: ConfigService,
   ) {
     this.network = this.configService.get<string>('STELLAR_NETWORK', 'testnet');
@@ -175,15 +177,20 @@ export class LedgerTrackerService {
 
     const safeLedgerSeq = Math.max(0, reorgResult.lastValidLedger - rollbackDepth);
 
-    // Delete processed events from the rolled-back ledgers
-    await this.prisma.processedEvent.deleteMany({
-      where: {
+    // Purge processed events from the rolled-back ledgers. This must be an
+    // explicit hard delete: eventId is unique, so a soft-deleted row would
+    // keep holding the key and block the event from being re-processed after
+    // the rollback. SoftDeleteService logs and audit-trails the purge.
+    await this.softDelete.hardDeleteMany(
+      'processedEvent',
+      {
         network: this.network,
         ledgerSeq: {
           gt: safeLedgerSeq,
         },
       },
-    });
+      `Blockchain re-org rollback to ledger ${safeLedgerSeq}`,
+    );
 
     this.logger.log(`Deleted processed events after ledger ${safeLedgerSeq}`);
 

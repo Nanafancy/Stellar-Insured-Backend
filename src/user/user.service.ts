@@ -15,7 +15,7 @@ import {
 } from '../common/utils/sanitization.util';
 import { Prisma, User } from '@prisma/client';
 
-interface PaginatedUsers {
+export interface PaginatedUsers {
   data: User[];
   meta: {
     page: number;
@@ -38,9 +38,13 @@ export class UserService {
       throw new BadRequestException('Invalid user ID format');
     }
 
+    // The soft-delete middleware already filters deleted rows; the explicit
+    // deletedAt filter is defense-in-depth so this query stays correct even
+    // if the middleware is bypassed or misconfigured.
     const user = await this.prisma.user.findFirst({
       where: {
         id,
+        deletedAt: null,
       },
     });
     if (!user) {
@@ -61,6 +65,7 @@ export class UserService {
     const user = await this.prisma.user.findFirst({
       where: {
         walletAddress: sanitizedAddress,
+        deletedAt: null,
       },
     });
     if (!user) {
@@ -78,10 +83,12 @@ export class UserService {
 
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
+        where: { deletedAt: null },
         skip: offset,
         take: safeLimit,
       }),
       this.prisma.user.count({
+        where: { deletedAt: null },
       }),
     ]);
 
@@ -165,11 +172,45 @@ export class UserService {
     });
   }
 
+  /**
+   * Soft-deletes a user and cascades the soft delete to their related
+   * records (notifications, notification settings, insurance policies and
+   * the claims on those policies) so nothing is orphaned or hard-deleted.
+   *
+   * The user remains recoverable: restoring is a matter of clearing the
+   * shared deletedAt timestamp (see SoftDeleteService.restore).
+   */
   async delete(id: string): Promise<{ id: string; deletedAt: Date | null }> {
     await this.findById(id);
-    const deletedUser = await this.prisma.user.delete({
-      where: { id },
-    });
+
+    const deletedAt = new Date();
+
+    // Single transaction so the user and their related records are either
+    // all soft-deleted or none are. The soft-delete middleware limits each
+    // update to rows that are still active, preserving earlier deletions.
+    const [deletedUser] = await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id },
+        data: { deletedAt },
+      }),
+      this.prisma.notification.updateMany({
+        where: { userId: id },
+        data: { deletedAt },
+      }),
+      this.prisma.notificationSetting.updateMany({
+        where: { userId: id },
+        data: { deletedAt },
+      }),
+      this.prisma.insurancePolicy.updateMany({
+        where: { userId: id },
+        data: { deletedAt },
+      }),
+      this.prisma.claim.updateMany({
+        where: { policy: { userId: id } },
+        data: { deletedAt },
+      }),
+    ]);
+
     return {
       id: deletedUser.id,
       deletedAt: deletedUser.deletedAt,

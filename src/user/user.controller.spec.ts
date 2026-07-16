@@ -58,9 +58,9 @@ describe('UserController', () => {
       mockUserService.findByWallet.mockRejectedValue(
         new NotFoundException('User with wallet address GXXX not found'),
       );
-      await expect(controller.getUserByWallet('GXXX')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        controller.getUserByWallet({ address: 'GXXX' }),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
