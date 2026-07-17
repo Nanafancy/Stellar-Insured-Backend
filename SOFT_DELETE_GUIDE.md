@@ -31,6 +31,11 @@ The following models support soft delete (have `deletedAt` field):
 - AuditLog
 - LedgerCursor
 - ProcessedEvent
+- IndexerLog
+- NotificationSetting
+- Notification
+- EmailOutbox
+- IdempotencyKey
 
 ### Files Added
 

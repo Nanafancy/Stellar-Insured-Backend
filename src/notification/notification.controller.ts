@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Put, BadRequestException } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    Get,
+    Param,
+    Post,
+    Put,
+    BadRequestException,
+    NotFoundException,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
@@ -27,9 +36,14 @@ export class NotificationController {
     @ApiParam({ name: 'userId', type: String, description: 'ID of the user' })
     @ApiOkResponse({ description: 'Notification settings for the user' })
     async getSettings(@Param('userId') userId: string) {
+        await this.ensureActiveUser(userId);
+
         return this.prisma.notificationSetting.upsert({
             where: { userId },
-            update: {},
+            // upsert bypasses the soft-delete middleware, so restore the row
+            // explicitly: an active user must always see usable settings even
+            // if they were previously soft-deleted (e.g. restored account).
+            update: { deletedAt: null },
             create: { userId },
         });
     }
@@ -44,9 +58,11 @@ export class NotificationController {
         @Param('userId') userId: string,
         @Body() settings: UpdateNotificationSettingsDto,
     ) {
+        await this.ensureActiveUser(userId);
+
         return this.prisma.notificationSetting.upsert({
             where: { userId },
-            update: settings,
+            update: { ...settings, deletedAt: null },
             create: {
                 userId,
                 ...settings,
@@ -88,6 +104,8 @@ export class NotificationController {
             throw new BadRequestException('Invalid key encoding');
         }
 
+        await this.ensureActiveUser(userId);
+
         // Encrypt push subscription before storing
         const encryptedSubscription = this.encryption.encrypt(JSON.stringify(subscription));
         await this.prisma.user.update({
@@ -95,5 +113,20 @@ export class NotificationController {
             data: { pushSubscription: encryptedSubscription },
         });
         return { success: true };
+    }
+
+    /**
+     * Rejects requests targeting missing or soft-deleted users with a 404
+     * instead of silently operating on (or resurrecting) their records.
+     */
+    private async ensureActiveUser(userId: string): Promise<void> {
+        const user = await this.prisma.user.findFirst({
+            where: { id: userId, deletedAt: null },
+            select: { id: true },
+        });
+
+        if (!user) {
+            throw new NotFoundException(`User with ID ${userId} not found`);
+        }
     }
 }

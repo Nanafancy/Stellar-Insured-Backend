@@ -67,6 +67,11 @@ Confirmed models:
 - AuditLog
 - LedgerCursor
 - ProcessedEvent
+- IndexerLog
+- NotificationSetting
+- Notification
+- EmailOutbox
+- IdempotencyKey
 
 ### Step 2: Ensure Migrations are Up-to-Date
 ```bash
