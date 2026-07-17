@@ -8,7 +8,7 @@ import {
     BadRequestException,
     NotFoundException,
 } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -24,6 +24,7 @@ import { PushSubscriptionDto } from './dto/push-subscription.dto';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
+@SkipThrottle({ auth: true })
 @Controller({ path: 'notifications', version: '1' })
 export class NotificationController {
     constructor(
@@ -31,6 +32,7 @@ export class NotificationController {
         private readonly encryption: EncryptionService,
     ) { }
 
+    @Throttle({ default: {} })
     @Get('settings/:userId')
     @ApiOperation({ summary: 'Fetch notification settings for a user' })
     @ApiParam({ name: 'userId', type: String, description: 'ID of the user' })

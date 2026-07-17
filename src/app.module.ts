@@ -21,6 +21,7 @@ import { StorageModule } from './storage/storage.module';
 import { InsuranceModule } from './insurance/insurance.module';
 
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { AppThrottlerGuard } from './auth/guards/app-throttler.guard';
 import { CorrelationIdMiddleware } from './middleware/correlation-id.middleware';
 
 // ← NEW: global exception filter for standardised error responses
@@ -72,6 +73,13 @@ import { ResponseTransformInterceptor } from './common/interceptors/response.int
   controllers: [AppController],
   providers: [
     AppService,
+
+    // Global rate limiting — ThrottlerModule config is inert without this guard.
+    // Registered before JwtAuthGuard so excess traffic is rejected cheaply.
+    {
+      provide: APP_GUARD,
+      useClass: AppThrottlerGuard,
+    },
 
     // Global JWT guard — decorators like @Public() opt routes out.
     {

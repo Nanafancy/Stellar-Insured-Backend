@@ -1,5 +1,6 @@
 import { Controller, Post, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiCreatedResponse } from '@nestjs/swagger';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { NonceService } from './nonce.service';
 import { Public } from '../auth/decorators/public.decorator';
 
@@ -15,6 +16,8 @@ import { Public } from '../auth/decorators/public.decorator';
  * NonceService.consumeNonce() inside the relevant auth guard / strategy.
  */
 @ApiTags('Nonce')
+@SkipThrottle({ default: true })
+@Throttle({ auth: {} })
 @Controller({ path: 'nonce', version: '1' })
 export class NonceController {
   constructor(private readonly nonceService: NonceService) {}
@@ -22,6 +25,7 @@ export class NonceController {
   /**
    * Issue a new one-time nonce.
    * Marked @Public() so it is reachable without a JWT.
+   * Rate-limited by the named `auth` throttler (THROTTLE_AUTH_*).
    */
   @Public()
   @Post()

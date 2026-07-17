@@ -1,5 +1,5 @@
 import { Controller, Post, Body } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiOkResponse } from '@nestjs/swagger';
 import { StorageService } from './storage.service';
 import { PinMetadataDto } from './dto/pin-metadata.dto';
@@ -8,6 +8,7 @@ import { VerifyHashDto } from './dto/verify-hash.dto';
 
 @ApiTags('Storage')
 @ApiBearerAuth()
+@SkipThrottle({ auth: true })
 @Controller({ path: 'storage', version: '1' })
 export class StorageController {
   constructor(private readonly storageService: StorageService) {}

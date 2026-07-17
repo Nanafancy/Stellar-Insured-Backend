@@ -123,6 +123,10 @@ class EnvironmentVariables {
 
   @IsNumber()
   @IsOptional()
+  THROTTLE_DEFAULT_TTL: number = 900000;
+
+  @IsNumber()
+  @IsOptional()
   THROTTLE_DEFAULT_LIMIT: number = 100;
 
   @IsNumber()

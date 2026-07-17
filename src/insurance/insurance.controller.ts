@@ -1,5 +1,5 @@
 import { Controller, Post, Param, Body, UseInterceptors } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { InsuranceService } from './insurance.service';
 import { ClaimService } from './claim.service';
 import { ReinsuranceService } from './reinsurance.service';
@@ -7,6 +7,7 @@ import { PurchasePolicyDto } from './dto/purchase-policy.dto';
 import { CreateReinsuranceDto } from './dto/create-reinsurance.dto';
 import { IdempotencyInterceptor } from '../interceptors/idempotency.interceptor';
 
+@SkipThrottle({ auth: true })
 @Controller({ path: 'insurance', version: '1' })
 export class InsuranceController {
   constructor(
