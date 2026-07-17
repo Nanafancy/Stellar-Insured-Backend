@@ -1,5 +1,6 @@
 import { Controller, Get, VERSION_NEUTRAL } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiOkResponse } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { AppService } from './app.service';
 import {
   HealthCheck,
@@ -11,6 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import { Public } from './auth/decorators/public.decorator';
 
 @ApiTags('Application')
+@SkipThrottle({ auth: true })
 @Controller({ version: VERSION_NEUTRAL })
 export class AppController {
   constructor(
@@ -30,6 +32,7 @@ export class AppController {
   }
 
   @Public()
+  @SkipThrottle({ default: true, auth: true })
   @Get('health')
   @HealthCheck()
   @ApiOperation({ summary: 'Run application health checks' })

@@ -9,7 +9,7 @@ import {
   DefaultValuePipe,
   ParseIntPipe,
 } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -28,6 +28,7 @@ import { User } from '@prisma/client';
 
 @ApiTags('Users')
 @ApiBearerAuth()
+@SkipThrottle({ auth: true })
 @Controller({ path: 'user', version: '1' })
 export class UserController {
   constructor(private readonly userService: UserService) {}

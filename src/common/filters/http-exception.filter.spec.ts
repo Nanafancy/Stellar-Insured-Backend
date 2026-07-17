@@ -1,4 +1,5 @@
 import { ArgumentsHost, HttpStatus, Logger } from '@nestjs/common';
+import { ThrottlerException } from '@nestjs/throttler';
 import { Prisma } from '@prisma/client';
 import { AllExceptionsFilter } from './http-exception.filter';
 import { ErrorCode } from '../enums/error-codes.enum';
@@ -103,6 +104,23 @@ describe('AllExceptionsFilter', () => {
         error: expect.objectContaining({
           code: ErrorCode.INTERNAL_SERVER_ERROR,
           message: 'A database error occurred.',
+        }),
+      }),
+    );
+  });
+
+  it('maps ThrottlerException to a 429 ErrorResponseDto', () => {
+    filter.catch(new ThrottlerException(), createArgumentsHost(response));
+
+    expect(response.status).toHaveBeenCalledWith(HttpStatus.TOO_MANY_REQUESTS);
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        error: expect.objectContaining({
+          code: ErrorCode.RATE_LIMIT_EXCEEDED,
+          message: 'Too many requests. Please slow down and try again later.',
+          path: '/policies',
+          requestId: 'req-1',
         }),
       }),
     );
