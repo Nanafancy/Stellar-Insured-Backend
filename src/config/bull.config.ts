@@ -10,9 +10,13 @@ export function bullConfig(config: ConfigService): BullModuleOptions {
   const password = config.get<string>('REDIS_PASSWORD');
   const db = config.get<number>('REDIS_DB', 0);
 
+  const redisHost = config.get<string>('REDIS_HOST', 'localhost');
+  const redisPort = config.get<number>('REDIS_PORT', 6379);
+
   return {
     redis: {
-      url: redisUrl,
+      host: redisHost,
+      port: redisPort,
       ...(password ? { password } : {}),
       db,
     },

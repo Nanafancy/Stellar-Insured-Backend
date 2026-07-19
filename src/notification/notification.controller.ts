@@ -24,6 +24,7 @@ import { UpdateNotificationSettingsDto } from './dto/update-notification-setting
 import { PushSubscriptionDto } from './dto/push-subscription.dto';
 import { NotificationService } from './services/notification.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
+import { Prisma } from 'node_modules/@prisma/client/default';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()

@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Process, Processor } from '@nestjs/bull';
 import { Job } from 'bull';
-import { StorageService } from '../storage.service';
-import { QUEUE_NAMES, IpfsPinJobData } from '../../notification/constants/queue.constants';
+import { StorageService } from './storage.service';
+import { IpfsPinJobData, QUEUE_NAMES } from 'src/notification/constants/queue.constants';
 
 @Injectable()
 @Processor(QUEUE_NAMES.IPFS_PIN)
