@@ -7,9 +7,10 @@ import { DeadlineAlertTask } from './tasks/deadline-alert.task';
 import { EmailRetryTask } from './tasks/email-retry.task';
 import { DatabaseModule } from '../database.module';
 import { UserModule } from '../user/user.module';
+import { QueueModule } from '../queue.module';
 
 @Module({
-  imports: [DatabaseModule, UserModule],
+  imports: [DatabaseModule, UserModule, QueueModule],
   controllers: [NotificationController],
   providers: [
     NotificationService,
@@ -20,4 +21,4 @@ import { UserModule } from '../user/user.module';
   ],
   exports: [NotificationService],
 })
-export class NotificationModule { }
+export class NotificationModule {}
