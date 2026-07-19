@@ -68,10 +68,29 @@ class EnvironmentVariables {
   REDIS_URL: string = 'redis://localhost:6379';
 
   @IsString()
-  REDIS_HOST: string;
+  @IsOptional()
+  REDIS_HOST: string = 'localhost';
 
   @IsNumber()
-  REDIS_PORT: number;
+  @IsOptional()
+  REDIS_PORT: number = 6379;
+
+  @IsString()
+  @IsOptional()
+  REDIS_PASSWORD: string = '';
+
+  @IsNumber()
+  @IsOptional()
+  REDIS_DB: number = 0;
+
+  // Bull / background job queue (uses Redis above)
+  @IsNumber()
+  @IsOptional()
+  EMAIL_QUEUE_MAX_ATTEMPTS: number = 5;
+
+  @IsNumber()
+  @IsOptional()
+  PUSH_QUEUE_MAX_ATTEMPTS: number = 5;
 
   /**
    * JWT_SECRET must be:
