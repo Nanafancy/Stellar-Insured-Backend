@@ -186,6 +186,15 @@ export interface FundsLockedEvent {
 }
 
 /**
+ * Funds released event data
+ */
+export interface FundsReleasedEvent {
+  projectId: number;
+  milestoneId: number;
+  amount: string;
+}
+
+/**
  * Milestone created event data
  */
 export interface MilestoneCreatedEvent {

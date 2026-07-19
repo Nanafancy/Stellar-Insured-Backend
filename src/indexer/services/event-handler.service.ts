@@ -7,9 +7,9 @@ import {
   ContributionMadeEvent,
   MilestoneApprovedEvent,
   MilestoneRejectedEvent,
-  FundsReleasedEvent,
   ProjectStatusEvent,
   DividendClaimedEvent,
+  FundsReleasedEvent,
 } from '../types/event-types';
 import { IEventHandler, IEventHandlerRegistry } from '../interfaces/event-handler.interface';
 import { NotificationService } from '../../notification/services/notification.service';
