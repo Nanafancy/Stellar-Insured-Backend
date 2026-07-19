@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
 import { Prisma } from '@prisma/client';
 import * as webpush from 'web-push';
 import { PrismaService } from '../../prisma.service';
@@ -7,6 +9,7 @@ import { WebPushService } from './web-push.service';
 import { NotificationType } from '../enums/notification-type.enum';
 import { validateEnum } from '../../common/validators/enum.validator';
 import { UserService } from '../../user/user.service';
+import { QUEUE_NAMES, EmailJobData, PushJobData } from '../constants/queue.constants';
 
 @Injectable()
 export class NotificationService {
@@ -17,8 +20,20 @@ export class NotificationService {
     private readonly emailService: EmailService,
     private readonly webPushService: WebPushService,
     private readonly userService: UserService,
+    @InjectQueue(QUEUE_NAMES.EMAIL)
+    private readonly emailQueue: Queue<EmailJobData>,
+    @InjectQueue(QUEUE_NAMES.PUSH)
+    private readonly pushQueue: Queue<PushJobData>,
   ) {}
 
+  /**
+   * Persists a notification and dispatches it through background queues.
+   *
+   * No synchronous SendGrid / web-push call happens here, so a slow or failing
+   * provider can never block or 500 the calling request. The actual send is
+   * performed off-request by the queue processors, with the EmailOutbox row
+   * providing a durable PENDING → SENT|FAILED record.
+   */
   async notify(
     userId: string,
     type: NotificationType,
@@ -62,34 +77,50 @@ export class NotificationService {
       },
     });
 
-    // Dispatch via Email
+    // Dispatch via Email: write a durable outbox row and enqueue the send.
     if (settings.emailEnabled && contactData.email) {
-      try {
-        await this.emailService.sendEmail(
-          contactData.email,
-          title,
-          `<p>${message}</p>`,
-        );
-      } catch {
-        this.logger.error(
-          `Failed to send email to ${contactData.email} for notification ${title}`,
-        );
-      }
+      await this.enqueueEmail(contactData.email, title, `<p>${message}</p>`);
     }
 
-    // Dispatch via Web Push
-    const pushSubscription = this.getPushSubscription(contactData.pushSubscription);
+    // Dispatch via Web Push: enqueue the send (best-effort, no outbox row).
+    const pushSubscription = this.getPushSubscription(
+      contactData.pushSubscription,
+    );
     if (settings.pushEnabled && pushSubscription) {
-      try {
-        await this.webPushService.sendNotification(pushSubscription, {
-          title,
-          body: message,
-          data,
-        });
-      } catch {
-        this.logger.error(`Failed to send web push for user ${userId}`);
-      }
+      await this.pushQueue.add(
+        { subscription: pushSubscription, payload: { title, body: message, data } },
+        { attempts: 5, backoff: { type: 'exponential', delay: 5000 } },
+      );
     }
+  }
+
+  /**
+   * Writes an EmailOutbox row (PENDING) and enqueues the email job. The job
+   * payload carries the outbox id so the processor can mark it SENT|FAILED.
+   */
+  async enqueueEmail(
+    to: string,
+    subject: string,
+    html: string,
+  ): Promise<void> {
+    const outbox = await this.prisma.emailOutbox.create({
+      data: { to, subject, html, status: 'PENDING' },
+    });
+
+    await this.emailQueue.add(
+      {
+        outboxId: outbox.id,
+        to: outbox.to,
+        subject: outbox.subject,
+        html: outbox.html,
+      },
+      {
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      },
+    );
   }
 
   private getPushSubscription(

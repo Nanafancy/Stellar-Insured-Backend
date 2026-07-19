@@ -5,6 +5,7 @@ import {
     Param,
     Post,
     Put,
+    HttpCode,
     BadRequestException,
     NotFoundException,
 } from '@nestjs/common';
@@ -21,6 +22,9 @@ import { PrismaService } from '../prisma.service';
 import { EncryptionService } from '../encryption/encryption.service';
 import { UpdateNotificationSettingsDto } from './dto/update-notification-settings.dto';
 import { PushSubscriptionDto } from './dto/push-subscription.dto';
+import { NotificationService } from './services/notification.service';
+import { CreateNotificationDto } from './dto/create-notification.dto';
+import { Prisma } from 'node_modules/@prisma/client/default';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
@@ -30,7 +34,31 @@ export class NotificationController {
     constructor(
         private readonly prisma: PrismaService,
         private readonly encryption: EncryptionService,
+        private readonly notificationService: NotificationService,
     ) { }
+
+    @Throttle({ default: { limit: 10, ttl: 60000 } })
+    @Post('notify')
+    @HttpCode(202)
+    @ApiOperation({
+        summary:
+            'Queue a notification for delivery (email + web push) via background jobs',
+    })
+    @ApiBody({ type: CreateNotificationDto })
+    @ApiOkResponse({ description: 'Notification accepted and queued for delivery' })
+    async notify(@Body() dto: CreateNotificationDto) {
+        // Enqueue and return 202 immediately. The actual SendGrid / web-push
+        // call happens off-request in the queue worker, so a slow or failing
+        // provider can never block or 500 this endpoint.
+        await this.notificationService.notify(
+            dto.userId,
+            dto.type,
+            dto.title,
+            dto.message,
+            dto.data as Prisma.InputJsonValue | undefined,
+        );
+        return { accepted: true };
+    }
 
     @Throttle({ default: {} })
     @Get('settings/:userId')

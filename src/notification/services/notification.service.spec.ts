@@ -12,6 +12,9 @@ interface MockPrismaService {
   notification: {
     create: jest.Mock;
   };
+  emailOutbox: {
+    create: jest.Mock;
+  };
 }
 
 interface MockEmailService {
@@ -22,11 +25,17 @@ interface MockWebPushService {
   sendNotification: jest.Mock;
 }
 
+interface MockQueue {
+  add: jest.Mock;
+}
+
 describe('NotificationService', () => {
   let service: NotificationService;
   let prisma: MockPrismaService;
   let emailService: MockEmailService;
   let webPushService: MockWebPushService;
+  let emailQueue: MockQueue;
+  let pushQueue: MockQueue;
 
   beforeEach(() => {
     prisma = {
@@ -36,6 +45,9 @@ describe('NotificationService', () => {
       notification: {
         create: jest.fn(),
       },
+      emailOutbox: {
+        create: jest.fn(),
+      },
     };
     emailService = {
       sendEmail: jest.fn(),
@@ -43,15 +55,19 @@ describe('NotificationService', () => {
     webPushService = {
       sendNotification: jest.fn(),
     };
+    emailQueue = { add: jest.fn() };
+    pushQueue = { add: jest.fn() };
 
     service = new NotificationService(
       prisma as unknown as PrismaService,
       emailService as unknown as EmailService,
       webPushService as unknown as WebPushService,
+      emailQueue as unknown as MockQueue,
+      pushQueue as unknown as MockQueue,
     );
   });
 
-  it('persists typed notification JSON and dispatches to enabled channels', async () => {
+  it('persists notification, writes an EmailOutbox row and enqueues jobs (no inline send)', async () => {
     const data: Prisma.InputJsonObject = { policyId: 'policy-1' };
     const pushSubscription = {
       endpoint: 'https://push.example.test/subscription',
@@ -73,6 +89,12 @@ describe('NotificationService', () => {
         notifyDeadlines: true,
       },
     });
+    prisma.emailOutbox.create.mockResolvedValue({
+      id: 'outbox-1',
+      to: 'person@example.com',
+      subject: 'Contribution received',
+      html: '<p>A contribution was received.</p>',
+    });
 
     await service.notify(
       'user-1',
@@ -91,18 +113,26 @@ describe('NotificationService', () => {
         data,
       },
     });
-    expect(emailService.sendEmail).toHaveBeenCalledWith(
-      'person@example.com',
-      'Contribution received',
-      '<p>A contribution was received.</p>',
-    );
-    expect(webPushService.sendNotification).toHaveBeenCalledWith(
-      pushSubscription,
-      {
+    // No inline provider call.
+    expect(emailService.sendEmail).not.toHaveBeenCalled();
+    expect(webPushService.sendNotification).not.toHaveBeenCalled();
+    // Durable outbox row written, then enqueued.
+    expect(prisma.emailOutbox.create).toHaveBeenCalledWith({
+      data: {
+        to: 'person@example.com',
+        subject: 'Contribution received',
+        html: '<p>A contribution was received.</p>',
+        status: 'PENDING',
+      },
+    });
+    expect(emailQueue.add).toHaveBeenCalledTimes(1);
+    expect(pushQueue.add).toHaveBeenCalledWith(
+      { subscription: pushSubscription, payload: {
         title: 'Contribution received',
         body: 'A contribution was received.',
         data,
-      },
+      } },
+      expect.objectContaining({ attempts: 5 }),
     );
   });
 });
