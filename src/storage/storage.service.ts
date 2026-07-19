@@ -5,10 +5,13 @@ import {
   ServiceUnavailableException,
   InternalServerErrorException,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
 import { ConfigService } from '@nestjs/config';
 import { create, IPFSHTTPClient } from 'ipfs-http-client';
 import * as fs from 'fs';
 import * as path from 'path';
+import { QUEUE_NAMES, IpfsPinJobData } from '../notification/constants/queue.constants';
 
 let sharp: typeof import('sharp') | undefined;
 try {
@@ -22,7 +25,11 @@ export class StorageService {
   private readonly logger = new Logger(StorageService.name);
   private ipfs: IPFSHTTPClient;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    @InjectQueue(QUEUE_NAMES.IPFS_PIN)
+    private readonly ipfsPinQueue: Queue<IpfsPinJobData>,
+  ) {
     const ipfsHost = this.config.get<string>('IPFS_HOST') || 'localhost';
     const ipfsPort = this.config.get<number>('IPFS_PORT') || 5001;
     const ipfsProtocol = this.config.get<string>('IPFS_PROTOCOL') || 'http';
@@ -32,6 +39,25 @@ export class StorageService {
       port: ipfsPort,
       protocol: ipfsProtocol,
     });
+  }
+
+  /**
+   * Enqueue an IPFS pin job so the (potentially slow) IPFS call happens
+   * off-request. Returns immediately after enqueueing.
+   */
+  async queuePinProjectMetadata(
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    await this.ipfsPinQueue.add(
+      { metadata },
+      {
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      },
+    );
+    this.logger.log('Queued IPFS pin job for project metadata');
   }
 
   async pinProjectMetadata(metadata: Record<string, unknown>): Promise<string> {
